@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ArtTechArtistPanel/ArtTechArtistPanel.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ArtTechArtistPanel.Tests/ArtTechArtistPanel.Tests.csproj" />
+  </Folder>
+</Solution>

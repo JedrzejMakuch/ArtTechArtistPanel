@@ -1,0 +1,35 @@
+@inherits LayoutComponentBase
+@inject AuthSession Session
+@inject NavigationManager Navigation
+
+<header class="topbar">
+    <a class="brand" href="">ArtTech <span>artist panel</span></a>
+    <nav aria-label="Main navigation">
+        <AuthorizeView>
+            <Authorized>
+                <NavLink href="profile">My profile</NavLink>
+                <NavLink href="exhibitions">Exhibitions</NavLink>
+                <button class="secondary" @onclick="Logout">Log out</button>
+            </Authorized>
+            <NotAuthorized>
+                <NavLink href="login">Log in</NavLink>
+                <NavLink href="register">Create account</NavLink>
+            </NotAuthorized>
+        </AuthorizeView>
+    </nav>
+</header>
+<main class="content">
+    @if (!Session.StorageAvailable)
+    {
+        <p class="notice" role="status">Browser session storage is unavailable. Reloading will require you to log in again.</p>
+    }
+    @Body
+</main>
+
+@code {
+    private async Task Logout()
+    {
+        await Session.LogoutAsync();
+        Navigation.NavigateTo("login", replace: true);
+    }
+}

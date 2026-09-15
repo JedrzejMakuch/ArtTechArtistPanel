@@ -1,0 +1,115 @@
+@page "/exhibitions"
+@attribute [Authorize]
+@implements IDisposable
+@inject ExhibitionApiClient Api
+@inject ArtistProfileApiClient Profiles
+@inject AuthSession Session
+
+<PageTitle>Exhibitions · ArtTech</PageTitle>
+<p class="eyebrow">Your exhibitions</p>
+<h1>My exhibitions</h1>
+<p>Create a draft, edit its details, and decide when viewers can see it.</p>
+<ProblemAlert Problem="error" />
+@if (message is not null) { <p class="success" role="status">@message</p> }
+@if (loading) { <p role="status">Loading your exhibitions…</p> }
+else if (missingProfile)
+{
+    <p class="notice">Create your artist profile before adding exhibitions. <a href="profile">Set up my profile</a></p>
+}
+else if (exhibitions is null)
+{
+    <button @onclick="Load">Try again</button>
+}
+else
+{
+    @if (profile is { IsActive: false })
+    { <p class="notice">Your profile is inactive. You can view exhibitions, but cannot create, edit or publish them.</p> }
+    <div class="action-row">
+        @if (profile is { IsActive: true }) { <a class="button-link" href="exhibitions/new">New exhibition</a> }
+        <button class="secondary" disabled="@(busyId is not null)" @onclick="Load">Refresh list</button>
+    </div>
+    @if (exhibitions.Length == 0)
+    {
+        <section class="card"><h2>No exhibitions yet</h2><p>Your first exhibition starts as a private draft.</p></section>
+    }
+    else
+    {
+        <ul class="exhibition-list">
+            @foreach (var exhibition in exhibitions)
+            {
+                <li class="card exhibition-card" @key="exhibition.Id">
+                    <div class="exhibition-heading"><h2><a href="@($"exhibitions/{exhibition.Id}")">@exhibition.Title</a></h2><ExhibitionStatus Status="@exhibition.Status" /></div>
+                    @if (!string.IsNullOrEmpty(exhibition.Description)) { <p class="exhibition-description">@exhibition.Description</p> }
+                    <p class="hint">Display order: @exhibition.SortOrder · Created @exhibition.CreatedAt.ToLocalTime().ToString("d")</p>
+                    @if (exhibition.Status == "published") { <p class="exhibition-code">Exhibition code: <code>@exhibition.ExhibitionCode</code></p> }
+                    <div class="action-row">
+                        <a href="@($"exhibitions/{exhibition.Id}")">Open exhibition</a>
+                        <ExhibitionActions Status="@exhibition.Status" Busy="@(busyId == exhibition.Id)"
+                            Disabled="@(profile is not { IsActive: true } || busyId is not null)" OnAction="action => Transition(exhibition.Id, action)" />
+                    </div>
+                </li>
+            }
+        </ul>
+    }
+}
+
+@code {
+    private readonly CancellationTokenSource lifetime = new();
+    private OwnArtistProfileDto? profile;
+    private OwnExhibitionDto[]? exhibitions;
+    private ApiProblem? error;
+    private string? message;
+    private bool loading, missingProfile;
+    private Guid? busyId;
+    protected override Task OnInitializedAsync() => Load();
+    private bool IsCurrent(int generation) => !lifetime.IsCancellationRequested && generation == Session.Generation;
+
+    private async Task Load()
+    {
+        if (loading || busyId is not null) return;
+        loading = true; error = null; message = null; exhibitions = null; missingProfile = false;
+        var generation = Session.Generation;
+        try
+        {
+            var owner = await Profiles.GetAsync(lifetime.Token);
+            if (!IsCurrent(generation)) return;
+            profile = owner;
+            if (owner is null) { missingProfile = true; return; }
+            var result = await Api.ListAsync(lifetime.Token);
+            if (IsCurrent(generation)) exhibitions = result;
+        }
+        catch (Exception ex) { if (IsCurrent(generation)) error = ApiProblem.FromException(ex); }
+        finally { loading = false; }
+    }
+
+    private async Task Transition(Guid id, string action)
+    {
+        if (busyId is not null || profile is not { IsActive: true }) return;
+        busyId = id; error = null; message = null;
+        var generation = Session.Generation;
+        try
+        {
+            var result = await Api.TransitionAsync(id, action, lifetime.Token);
+            if (!IsCurrent(generation)) return;
+            exhibitions = exhibitions!.Select(x => x.Id == id ? result : x).ToArray();
+            message = "Exhibition updated.";
+        }
+        catch (ApiException ex) when (ex.Status is System.Net.HttpStatusCode.Conflict or System.Net.HttpStatusCode.NotFound)
+        {
+            if (!IsCurrent(generation)) return;
+            error = ex.Problem;
+            try
+            {
+                var result = await Api.ListAsync(lifetime.Token);
+                if (IsCurrent(generation)) exhibitions = result;
+            }
+            catch (Exception readError)
+            {
+                if (IsCurrent(generation)) { exhibitions = null; error = ApiProblem.FromException(readError); }
+            }
+        }
+        catch (Exception ex) { if (IsCurrent(generation)) error = ApiProblem.FromException(ex); }
+        finally { busyId = null; }
+    }
+    public void Dispose() { lifetime.Cancel(); lifetime.Dispose(); }
+}

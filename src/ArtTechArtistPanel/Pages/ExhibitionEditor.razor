@@ -1,0 +1,217 @@
+@page "/exhibitions/new"
+@page "/exhibitions/{Id:guid}"
+@attribute [Authorize]
+@implements IDisposable
+@inject ExhibitionApiClient Api
+@inject ArtistProfileApiClient Profiles
+@inject AuthSession Session
+@inject NavigationManager Navigation
+
+<PageTitle>@(Id is null ? "New exhibition" : editing ? "Edit exhibition" : "Exhibition details") · ArtTech</PageTitle>
+<a href="exhibitions">← My exhibitions</a>
+<h1>@(Id is null ? "New exhibition" : editing ? "Edit exhibition" : "Exhibition details")</h1>
+<ProblemAlert Problem="error" />
+<ProblemAlert Problem="refreshError" />
+@if (message is not null) { <p class="success" role="status">@message</p> }
+@if (loading) { <p role="status">Loading exhibition…</p> }
+else if (missingProfile)
+{ <p class="notice">Create your artist profile first. <a href="profile">Set up my profile</a></p> }
+else if (!loaded)
+{ <button @onclick="Reload">Try again</button> }
+else
+{
+    @if (profile is { IsActive: false })
+    { <p class="notice">Your profile is inactive. Exhibition details are read-only.</p> }
+    @if (unavailable)
+    { <p class="notice">This exhibition is unavailable. Your unsaved input is shown below.</p> }
+    @if (exhibition is not null && !editing)
+    {
+        <section class="card exhibition-details">
+            <h2>@exhibition.Title</h2><p class="biography">@exhibition.Description</p>
+            <p>Display order: @exhibition.SortOrder</p>
+            @if (CanWrite) { <button disabled="@busy" @onclick="() => editing = true">Edit exhibition</button> }
+        </section>
+        <section class="card" aria-label="Publication">
+            <p><a href="@($"exhibitions/{exhibition.Id}/artworks")">Manage artworks</a></p>
+            <h2>Publication</h2>
+            <ExhibitionStatus Status="@exhibition.Status" />
+            <p>@(exhibition.Status switch { "draft" => "This draft is hidden from viewers.", "published" => "Viewers can open this exhibition while your account and profile are active.", "deactivated" => "This exhibition is hidden from viewers. You can republish it.", _ => "Refresh to check the current status." })</p>
+            @if (exhibition.Status == "published")
+            { <p class="exhibition-code">Exhibition code: <code>@exhibition.ExhibitionCode</code></p> }
+            <ExhibitionActions Status="@exhibition.Status" Busy="transitioning" Disabled="@(busy || !CanWrite || stateUncertain || editContext.IsModified())" OnAction="Transition" />
+            @if (editContext.IsModified()) { <p class="hint">Save your metadata changes before changing publication.</p> }
+            @if (stateUncertain)
+            { <p class="notice">Refresh the server state before another action. Your input will be kept.</p><button disabled="@busy" class="secondary" @onclick="RefreshState">Refresh server state</button> }
+        </section>
+        <ArtTechArtistPanel.Pages.Artworks ExhibitionId="exhibition.Id" Parent="exhibition" CanManage="CanWrite" />
+    }
+    else if (exhibition is null)
+    { <p>Your new exhibition will start as a draft, hidden from viewers.</p> }
+    @if (Id is null || editing)
+    {
+    @if (exhibition is not null) { <ExhibitionStatus Status="@exhibition.Status" /> }
+    @if (stateUncertain) { <button disabled="@busy" @onclick="RefreshState">Refresh server state</button> }
+    <section class="card">
+        <EditForm EditContext="editContext" OnValidSubmit="Save" @key="editContext">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <fieldset disabled="@(busy || !CanWrite)">
+                <label for="exhibition-title">Title</label>
+                <InputText id="exhibition-title" @bind-Value="form.Title" maxlength="200" />
+                <ValidationMessage For="@(() => form.Title)" />
+                <label for="exhibition-description">Description <span class="hint">(optional)</span></label>
+                <InputTextArea id="exhibition-description" @bind-Value="form.Description" maxlength="2000" rows="6" />
+                <ValidationMessage For="@(() => form.Description)" />
+                <label for="exhibition-order">Display order</label>
+                <InputNumber id="exhibition-order" @bind-Value="form.SortOrder" min="0" max="2147483647" />
+                <ValidationMessage For="@(() => form.SortOrder)" />
+                <p class="hint">Lower numbers appear first in your exhibition list.</p>
+                @if (exhibition?.Status == "published") { <p class="hint">Saved metadata changes are immediately public.</p> }
+                <button type="submit">@(busy && !transitioning ? "Saving…" : Id is null ? "Create draft" : "Save changes")</button>
+            </fieldset>
+        </EditForm>
+        @if (Id is not null) { <button class="secondary" disabled="@busy" @onclick="CancelEdit">Cancel</button> }
+    </section>
+    }
+}
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+    private CancellationTokenSource lifetime = new();
+    private OwnArtistProfileDto? profile;
+    private OwnExhibitionDto? exhibition;
+    private SaveExhibitionRequest form = new();
+    private EditContext editContext = null!;
+    private ApiProblem? error, refreshError;
+    private string? message;
+    private bool loading, loaded, busy, transitioning, missingProfile, unavailable, stateUncertain;
+    private int requestVersion;
+    private bool editing;
+    private void CancelEdit() { SetForm(Metadata(exhibition!)); editing = false; error = null; message = null; }
+    private bool CanWrite => profile is { IsActive: true } && !unavailable;
+    private bool IsCurrent(int generation, int version) => !lifetime.IsCancellationRequested && generation == Session.Generation && version == requestVersion;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        lifetime.Cancel(); lifetime.Dispose(); lifetime = new();
+        ++requestVersion;
+        loading = loaded = false; busy = transitioning = editing = false; exhibition = null; profile = null;
+        SetForm(new());
+        await Reload();
+    }
+
+    private void SetForm(SaveExhibitionRequest value)
+    {
+        if (editContext is not null) editContext.OnFieldChanged -= FieldChanged;
+        form = value; editContext = new(form); editContext.OnFieldChanged += FieldChanged;
+    }
+    private void FieldChanged(object? sender, FieldChangedEventArgs args) { message = null; StateHasChanged(); }
+    private static SaveExhibitionRequest Metadata(OwnExhibitionDto value) => new() { Title = value.Title, Description = value.Description, SortOrder = value.SortOrder };
+
+    private async Task Reload()
+    {
+        if (loading) return;
+        loading = true; error = refreshError = null; message = null; missingProfile = unavailable = stateUncertain = false;
+        var generation = Session.Generation; var version = requestVersion;
+        try
+        {
+            var owner = await Profiles.GetAsync(lifetime.Token);
+            if (!IsCurrent(generation, version)) return;
+            profile = owner;
+            if (Id is null && owner is null) { missingProfile = true; return; }
+            var result = Id is null ? null : await Api.GetAsync(Id.Value, lifetime.Token);
+            if (!IsCurrent(generation, version)) return;
+            exhibition = result; SetForm(result is null ? new() : Metadata(result)); loaded = true;
+        }
+        catch (Exception ex) { if (IsCurrent(generation, version)) error = ApiProblem.FromException(ex); }
+        finally { if (version == requestVersion) loading = false; }
+    }
+
+    private async Task Save()
+    {
+        if (busy || !CanWrite) return;
+        busy = true; error = refreshError = null; message = null;
+        var generation = Session.Generation; var version = requestVersion;
+        try
+        {
+            var result = await Api.SaveAsync(form, Id, lifetime.Token);
+            if (!IsCurrent(generation, version)) return;
+            exhibition = result; SetForm(Metadata(result)); stateUncertain = false; editing = false;
+            if (Id is null) Navigation.NavigateTo($"exhibitions/{result.Id}", replace: true);
+            else message = "Exhibition saved.";
+        }
+        catch (ApiException ex) when (ex.Status == System.Net.HttpStatusCode.Conflict)
+        {
+            if (!IsCurrent(generation, version)) return;
+            error = ex.Problem;
+            if (Id is not null) await ReadState(generation, version);
+        }
+        catch (Exception ex) { if (IsCurrent(generation, version)) RecordError(ex); }
+        finally { if (version == requestVersion) busy = false; }
+    }
+
+    private async Task Transition(string action)
+    {
+        if (busy || !CanWrite || stateUncertain || editContext.IsModified() || Id is null) return;
+        busy = transitioning = true; error = refreshError = null; message = null;
+        var generation = Session.Generation; var version = requestVersion;
+        try
+        {
+            var result = await Api.TransitionAsync(Id.Value, action, lifetime.Token);
+            if (!IsCurrent(generation, version)) return;
+            exhibition = result; SetForm(Metadata(result)); message = "Exhibition updated.";
+        }
+        catch (ApiException ex) when (ex.Status == System.Net.HttpStatusCode.Conflict)
+        {
+            if (!IsCurrent(generation, version)) return;
+            error = ex.Problem; await ReadState(generation, version);
+        }
+        catch (Exception ex)
+        {
+            if (!IsCurrent(generation, version)) return;
+            RecordError(ex);
+            // A lost response may follow a successful write. Require a read before retrying.
+            if (ex is not ApiException || ex is ApiException { Status: >= System.Net.HttpStatusCode.InternalServerError }) stateUncertain = true;
+        }
+        finally { if (version == requestVersion) busy = transitioning = false; }
+    }
+
+    private void RecordError(Exception ex)
+    {
+        error = ApiProblem.FromException(ex);
+        if (ex is ApiException { Status: System.Net.HttpStatusCode.NotFound })
+        { if (Id is null) missingProfile = true; else unavailable = true; }
+    }
+    private async Task RefreshState()
+    {
+        if (busy) return;
+        busy = true;
+        var version = requestVersion;
+        try { await ReadState(Session.Generation, version); }
+        finally { if (version == requestVersion) busy = false; }
+    }
+    private async Task ReadState(int generation, int version)
+    {
+        stateUncertain = true; refreshError = null;
+        try
+        {
+            var result = await Api.GetAsync(Id!.Value, lifetime.Token);
+            if (IsCurrent(generation, version))
+            {
+                exhibition = result; stateUncertain = false;
+                if (!editContext.IsModified()) SetForm(Metadata(result));
+            }
+        }
+        catch (Exception ex)
+        {
+            if (!IsCurrent(generation, version)) return;
+            refreshError = ApiProblem.FromException(ex);
+            if (ex is ApiException { Status: System.Net.HttpStatusCode.NotFound }) unavailable = true;
+        }
+    }
+    public void Dispose()
+    {
+        ++requestVersion; lifetime.Cancel(); lifetime.Dispose();
+        if (editContext is not null) editContext.OnFieldChanged -= FieldChanged;
+    }
+}

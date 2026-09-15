@@ -1,0 +1,6 @@
+@inject NavigationManager Navigation
+<p role="status">Redirecting to login…</p>
+@code {
+    // Keep the existing login destination; never accept an external return URL.
+    protected override void OnInitialized() => Navigation.NavigateTo("login", replace: true);
+}

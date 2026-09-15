@@ -1,0 +1,6 @@
+<span class="exhibition-status @CssClass">@Label</span>
+@code {
+    [Parameter, EditorRequired] public string Status { get; set; } = "";
+    private string Label => Status switch { "draft" => "Draft", "published" => "Published", "deactivated" => "Deactivated", _ => "Unknown status" };
+    private string CssClass => Status switch { "draft" => "draft", "published" => "published", "deactivated" => "deactivated", _ => "" };
+}

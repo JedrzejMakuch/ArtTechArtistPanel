@@ -1,0 +1,8 @@
+@page "/"
+@inject AuthSession Session
+@inject NavigationManager Navigation
+<PageTitle>ArtTech artist panel</PageTitle>
+<p role="status">Opening your panel…</p>
+@code {
+    protected override void OnInitialized() => Navigation.NavigateTo(Session.IsAuthenticated ? "profile" : "login", replace: true);
+}

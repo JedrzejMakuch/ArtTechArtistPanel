@@ -1,0 +1,49 @@
+@page "/login"
+@implements IDisposable
+@inject AuthSession Session
+@inject NavigationManager Navigation
+
+<PageTitle>Log in · ArtTech</PageTitle>
+<section class="card auth-card">
+    <p class="eyebrow">Your artist space</p>
+    <h1>Welcome back</h1>
+    <p>Log in to manage your public artist profile.</p>
+    <ProblemAlert Problem="error" />
+    <EditForm Model="credentials" OnValidSubmit="Submit">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+        <fieldset disabled="@busy">
+            <label for="email">Email</label>
+            <InputText id="email" type="email" autocomplete="username" @bind-Value="credentials.Email" />
+            <label for="password">Password</label>
+            <InputText id="password" type="password" autocomplete="current-password" @bind-Value="credentials.Password" />
+            <button type="submit">@(busy ? "Logging in…" : "Log in")</button>
+        </fieldset>
+    </EditForm>
+    <p>New to ArtTech? <a href="register">Create an account</a></p>
+</section>
+
+@code {
+    private readonly Credentials credentials = new();
+    private readonly CancellationTokenSource lifetime = new();
+    private bool busy;
+    private ApiProblem? error;
+    protected override void OnInitialized()
+    {
+        if (Session.IsAuthenticated) Navigation.NavigateTo("profile", replace: true);
+    }
+    private async Task Submit()
+    {
+        if (busy) return;
+        busy = true; error = null;
+        try
+        {
+            await Session.LoginAsync(credentials, lifetime.Token);
+            if (lifetime.IsCancellationRequested) return;
+            Navigation.NavigateTo("profile", replace: true);
+        }
+        catch (Exception ex) { error = ApiProblem.FromException(ex); }
+        finally { credentials.Password = ""; busy = false; }
+    }
+    public void Dispose() { lifetime.Cancel(); lifetime.Dispose(); }
+}

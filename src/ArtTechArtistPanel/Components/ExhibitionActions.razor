@@ -1,0 +1,33 @@
+<div class="exhibition-actions" aria-label="Publication actions">
+    @if (Status == "published")
+    {
+        @if (confirming)
+        {
+            <div class="notice">
+                <p>Deactivate this exhibition? Viewers will no longer be able to open it. You can republish it later.</p>
+                <div class="action-row">
+                    <button type="button" disabled="@(Busy || Disabled)" @onclick="Confirm">Confirm deactivation</button>
+                    <button type="button" class="secondary" disabled="@Busy" @onclick="() => confirming = false">Cancel</button>
+                </div>
+            </div>
+        }
+        else
+        {
+            <button type="button" class="secondary" disabled="@(Busy || Disabled)" @onclick="() => confirming = true">Deactivate</button>
+        }
+    }
+    else if (Status is "draft" or "deactivated")
+    {
+        <button type="button" disabled="@(Busy || Disabled)" @onclick='() => OnAction.InvokeAsync("publish")'>@(Status == "draft" ? "Publish" : "Republish")</button>
+    }
+    @if (Busy) { <span role="status">Updating exhibition…</span> }
+</div>
+@code {
+    [Parameter] public string Status { get; set; } = "";
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public EventCallback<string> OnAction { get; set; }
+    private bool confirming;
+    protected override void OnParametersSet() { if (Status != "published" || Disabled) confirming = false; }
+    private async Task Confirm() { confirming = false; await OnAction.InvokeAsync("deactivate"); }
+}

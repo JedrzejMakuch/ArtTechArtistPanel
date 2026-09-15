@@ -1,0 +1,47 @@
+@inject ArtTechArtistPanel.Configuration.ApiOptions Options
+@inject AuthSession Session
+
+@if (Options.Error is not null)
+{
+    <main class="startup"><h1>Panel configuration required</h1><p role="alert">@Options.Error</p></main>
+}
+else if (!Session.IsInitialized)
+{
+    <main class="startup">
+        <h1>ArtTech artist panel</h1>
+        @if (error is null) { <p role="status">Restoring your session…</p> }
+        else
+        {
+            <ProblemAlert Problem="error" />
+            <button @onclick="Initialize">Retry</button>
+            <button class="secondary" @onclick="SessionLogout">Go to login</button>
+        }
+    </main>
+}
+else
+{
+    <Router AppAssembly="@typeof(App).Assembly" NotFoundPage="typeof(Pages.NotFound)">
+        <Found Context="routeData">
+            <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)">
+                <NotAuthorized><RedirectToLogin /></NotAuthorized>
+                <Authorizing><p role="status">Checking your session…</p></Authorizing>
+            </AuthorizeRouteView>
+            <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+        </Found>
+    </Router>
+}
+
+@code {
+    private ApiProblem? error;
+    protected override async Task OnInitializedAsync()
+    {
+        if (Options.Error is null) await Initialize();
+    }
+    private async Task Initialize()
+    {
+        error = null;
+        try { await Session.InitializeAsync(); }
+        catch (Exception ex) { error = ApiProblem.FromException(ex); }
+    }
+    private async Task SessionLogout() => await Session.LogoutAsync();
+}

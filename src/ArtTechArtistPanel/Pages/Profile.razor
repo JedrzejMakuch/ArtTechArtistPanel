@@ -1,0 +1,156 @@
+@page "/profile"
+@attribute [Authorize]
+@implements IDisposable
+@inject ArtistProfileApiClient Api
+@inject AuthSession Session
+
+<PageTitle>My profile · ArtTech</PageTitle>
+<p class="eyebrow">Artist profile</p>
+<h1>@(loaded && profile is null ? "Introduce yourself" : "My profile")</h1>
+<p>Your name and biography are public as soon as you save.</p>
+<ProblemAlert Problem="error" />
+@if (loading)
+{
+    <p role="status">Loading your profile…</p>
+}
+else if (!loaded)
+{
+    <button @onclick="Load">Try again</button>
+}
+else
+{
+    @if (profile is { IsActive: false })
+    {
+        <p class="notice" role="status">This profile is inactive. You can read it, but editing and public viewing are unavailable.</p>
+    }
+    @if (profile is null || editing)
+    {
+    <section class="card">
+        <EditForm Model="form" OnValidSubmit="Save">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <fieldset disabled="@(saving || profile is { IsActive: false })">
+                <label for="display-name">Display name</label>
+                <InputText id="display-name" @bind-Value="form.DisplayName" maxlength="200" />
+                <ValidationMessage For="@(() => form.DisplayName)" />
+                <label for="bio">Biography <span class="hint">(optional)</span></label>
+                <InputTextArea id="bio" @bind-Value="form.Bio" maxlength="2000" rows="7" />
+                <ValidationMessage For="@(() => form.Bio)" />
+                <p class="hint">Up to 2,000 characters. Plain text.</p>
+                <button type="submit">@(saving ? "Saving…" : profile is null ? "Create profile" : "Save changes")</button>
+            </fieldset>
+        </EditForm>
+        @if (profile is not null) { <button class="secondary" disabled="@saving" @onclick="CancelEdit">Cancel</button> }
+    </section>
+    }
+    else
+    {
+        <section class="card profile-details">
+            <h2>@profile.DisplayName</h2><p class="biography">@profile.Bio</p>
+            <p class="hint">Profile code: @profile.ProfileCode</p>
+            @if (profile.IsActive) { <button @onclick="() => editing = true">Edit profile</button> }
+            <p><a href="exhibitions">My exhibitions</a></p>
+        </section>
+    }
+    @if (saved) { <p class="success" role="status">Profile saved.</p> }
+    @if (profile is { IsActive: true })
+    {
+        <section class="card public-preview" aria-label="Public profile preview">
+            <h2>Public profile</h2>
+            <p class="hint">This is the profile visitors see.</p>
+            @if (verifying) { <p role="status">Checking the public profile…</p> }
+            <ProblemAlert Problem="publicError" />
+            @if (publicProfile is not null)
+            {
+                <h3>@publicProfile.DisplayName</h3>
+                <p class="biography">@publicProfile.Bio</p>
+                <p class="hint">Profile code: @publicProfile.ProfileCode</p>
+                @if (publicProfile.DisplayName != profile.DisplayName || publicProfile.Bio != profile.Bio)
+                { <p class="notice">Public data differs from your last saved profile. Refresh to check again.</p> }
+            }
+            <button class="secondary" disabled="@(verifying || saving)" @onclick="Verify">Refresh public profile</button>
+        </section>
+    }
+}
+
+@code {
+    private readonly CancellationTokenSource lifetime = new();
+    private OwnArtistProfileDto? profile;
+    private PublicArtistProfileDto? publicProfile;
+    private SaveArtistProfileRequest form = new();
+    private ApiProblem? error, publicError;
+    private bool loading, loaded, saving, saved, verifying, editing;
+    private void CancelEdit() { form = new() { DisplayName = profile!.DisplayName, Bio = profile.Bio }; editing = false; saved = false; error = null; }
+    private int publicRequest;
+    protected override Task OnInitializedAsync() => Load();
+    private bool IsCurrent(int generation) => !lifetime.IsCancellationRequested && generation == Session.Generation;
+
+    private async Task Load()
+    {
+        loading = true; error = null;
+        var generation = Session.Generation;
+        try
+        {
+            var result = await Api.GetAsync(lifetime.Token);
+            if (!IsCurrent(generation)) return;
+            profile = result;
+            form = new() { DisplayName = profile?.DisplayName ?? "", Bio = profile?.Bio ?? "" };
+            loaded = true;
+            if (profile is { IsActive: true }) await Verify();
+        }
+        catch (Exception ex) { if (IsCurrent(generation)) error = ApiProblem.FromException(ex); }
+        finally { loading = false; }
+    }
+
+    private async Task Save()
+    {
+        if (saving) return;
+        saving = true; saved = false; error = null; publicProfile = null; publicError = null;
+        ++publicRequest; // A pending preview from before this save must not replace the new result.
+        verifying = false;
+        var generation = Session.Generation;
+        try
+        {
+            var result = await Api.SaveAsync(form, profile is null, lifetime.Token);
+            if (!IsCurrent(generation)) return;
+            profile = result;
+            form = new() { DisplayName = result.DisplayName, Bio = result.Bio };
+            saved = true; editing = false;
+            await Verify();
+        }
+        catch (ApiException ex) when (ex.Status == System.Net.HttpStatusCode.Conflict)
+        {
+            if (!IsCurrent(generation)) return;
+            error = ex.Problem; editing = true;
+            // Preserve unsaved input. Switch to PUT if another tab already created the profile.
+            try
+            {
+                var existing = await Api.GetAsync(lifetime.Token);
+                if (IsCurrent(generation)) profile = existing;
+            }
+            catch (Exception readError) { if (IsCurrent(generation)) error = ApiProblem.FromException(readError); }
+        }
+        catch (ApiException ex) when (ex.Status == System.Net.HttpStatusCode.NotFound)
+        {
+            if (IsCurrent(generation)) { profile = null; error = ex.Problem; }
+        }
+        catch (Exception ex) { if (IsCurrent(generation)) error = ApiProblem.FromException(ex); }
+        finally { saving = false; }
+    }
+
+    private async Task Verify()
+    {
+        if (profile is not { IsActive: true }) return;
+        verifying = true; publicError = null; publicProfile = null;
+        var request = ++publicRequest;
+        var generation = Session.Generation;
+        try
+        {
+            var result = await Api.GetPublicAsync(profile.ProfileCode, lifetime.Token);
+            if (IsCurrent(generation) && request == publicRequest) publicProfile = result;
+        }
+        catch (Exception ex) { if (IsCurrent(generation) && request == publicRequest) publicError = ApiProblem.FromException(ex); }
+        finally { if (request == publicRequest) verifying = false; }
+    }
+    public void Dispose() { lifetime.Cancel(); lifetime.Dispose(); }
+}

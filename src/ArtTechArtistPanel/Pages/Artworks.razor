@@ -1,0 +1,76 @@
+@page "/exhibitions/{ExhibitionId:guid}/artworks"
+@attribute [Authorize]
+@implements IDisposable
+@inject ArtworkApiClient Api
+@inject ExhibitionApiClient ExhibitionsApi
+@inject ArtistProfileApiClient Profiles
+@inject AuthSession Session
+
+@if (Parent is null)
+{
+<PageTitle>Artworks · ArtTech</PageTitle>
+<a href="@($"exhibitions/{ExhibitionId}")">Back to exhibition</a>
+<h1>Artworks</h1>
+}
+else { <h2>Artworks</h2> }
+<ProblemAlert Problem="error" />
+@if (loading) { <p role="status">Loading artworks…</p> }
+else if (rows is null) { <button @onclick="Load">Try again</button> }
+else
+{
+    @if (Parent is null) { <p class="biography">@exhibition!.Title</p><ExhibitionStatus Status="@exhibition.Status" /> }
+    @if (!canWrite) { <p class="notice">Your profile is inactive. Artworks are read-only.</p> }
+    <div class="action-row">
+        @if (canWrite) { <a class="button-link" href="@($"exhibitions/{ExhibitionId}/artworks/new")">Add artwork</a> }
+        <button class="secondary" @onclick="Load">Refresh list</button>
+    </div>
+    @if (rows.Length == 0) { <section class="card"><h2>No artworks yet</h2><p>Add artwork details and an image URL to this exhibition.</p></section> }
+    <ul class="exhibition-list">
+        @foreach (var artwork in rows)
+        {
+            <li class="card exhibition-card" @key="artwork.Id">
+                <h2><a href="@($"exhibitions/{ExhibitionId}/artworks/{artwork.Id}")">@artwork.Title</a></h2>
+                <a href="@($"exhibitions/{ExhibitionId}/artworks/{artwork.Id}")">@(canWrite ? "Edit artwork" : "View artwork")</a>
+                <p>@artwork.WidthCm × @artwork.HeightCm cm · @artwork.CreationYear · Display order: @artwork.SortOrder</p>
+                @if (!artwork.IsActive) { <p class="notice">Inactive artwork — hidden from viewers.</p> }
+                <p class="biography">@artwork.Description</p>
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    [Parameter] public Guid ExhibitionId { get; set; }
+    [Parameter] public OwnExhibitionDto? Parent { get; set; }
+    [Parameter] public bool CanManage { get; set; }
+    private CancellationTokenSource lifetime = new();
+    private OwnArtworkDto[]? rows;
+    private OwnExhibitionDto? exhibition;
+    private ApiProblem? error;
+    private bool loading, canWrite;
+    private int version;
+    protected override async Task OnParametersSetAsync()
+    {
+        lifetime.Cancel(); lifetime.Dispose(); lifetime = new(); ++version; loading = false;
+        await Load();
+    }
+    private async Task Load()
+    {
+        if (loading) return;
+        loading = true; rows = null; error = null;
+        var request = version; var generation = Session.Generation;
+        bool Current() => request == version && generation == Session.Generation && !lifetime.IsCancellationRequested;
+        try
+        {
+            var profile = Parent is null ? await Profiles.GetAsync(lifetime.Token) : null;
+            if (!Current()) return;
+            var parent = Parent ?? await ExhibitionsApi.GetAsync(ExhibitionId, lifetime.Token);
+            if (!Current()) return;
+            var result = await Api.ListAsync(ExhibitionId, lifetime.Token);
+            if (Current()) { rows = result; exhibition = parent; canWrite = Parent is null ? profile is { IsActive: true } : CanManage; }
+        }
+        catch (Exception ex) { if (Current()) error = ApiProblem.FromException(ex); }
+        finally { if (request == version) loading = false; }
+    }
+    public void Dispose() { ++version; lifetime.Cancel(); lifetime.Dispose(); }
+}

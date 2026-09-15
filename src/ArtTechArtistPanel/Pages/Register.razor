@@ -1,0 +1,62 @@
+@page "/register"
+@implements IDisposable
+@inject IdentityApiClient Identity
+@inject AuthSession Session
+@inject NavigationManager Navigation
+
+<PageTitle>Create account · ArtTech</PageTitle>
+<section class="card auth-card">
+    <p class="eyebrow">Start with your story</p>
+    <h1>Create your account</h1>
+    <p>Next, add the name and biography visitors will see.</p>
+    <ProblemAlert Problem="error" />
+    @if (registered)
+    {
+        <p role="status">Your account was created. <a href="login">Log in to continue</a>.</p>
+    }
+    else
+    {
+        <EditForm Model="credentials" OnValidSubmit="Submit">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <fieldset disabled="@busy">
+                <label for="email">Email</label>
+                <InputText id="email" type="email" autocomplete="username" @bind-Value="credentials.Email" />
+                <label for="password">Password</label>
+                <InputText id="password" type="password" autocomplete="new-password" @bind-Value="credentials.Password" />
+                <p class="hint">Use at least 6 characters, including uppercase and lowercase letters, a number and a symbol.</p>
+                <button type="submit">@(busy ? "Creating account…" : "Create account")</button>
+            </fieldset>
+        </EditForm>
+    }
+    <p>Already registered? <a href="login">Log in</a></p>
+</section>
+
+@code {
+    private readonly Credentials credentials = new();
+    private readonly CancellationTokenSource lifetime = new();
+    private bool busy, registered;
+    private ApiProblem? error;
+    protected override void OnInitialized()
+    {
+        if (Session.IsAuthenticated) Navigation.NavigateTo("profile", replace: true);
+    }
+    private async Task Submit()
+    {
+        if (busy) return;
+        busy = true; error = null;
+        var generation = Session.Generation;
+        try
+        {
+            await Identity.RegisterAsync(credentials, lifetime.Token);
+            registered = true;
+            if (generation != Session.Generation || lifetime.IsCancellationRequested) return;
+            await Session.LoginAsync(credentials, lifetime.Token);
+            if (lifetime.IsCancellationRequested) return;
+            Navigation.NavigateTo("profile", replace: true);
+        }
+        catch (Exception ex) { error = ApiProblem.FromException(ex); }
+        finally { credentials.Password = ""; busy = false; }
+    }
+    public void Dispose() { lifetime.Cancel(); lifetime.Dispose(); }
+}

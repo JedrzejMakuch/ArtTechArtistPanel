@@ -1,0 +1,54 @@
+:root { font-family: system-ui, sans-serif; color: #26352e; background: #f5f4ef; line-height: 1.6; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+a { color: #285c47; text-underline-offset: .2em; }
+a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid #b27b24; outline-offset: 3px; }
+.topbar { background: #fff; border-bottom: 1px solid #dce1d9; padding: 1.2rem max(1.2rem, calc((100vw - 1050px)/2)); display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.brand { font-size: 1.4rem; font-weight: 750; text-decoration: none; white-space: nowrap; }
+.brand span { display: block; font-size: .7rem; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; }
+nav { display: flex; align-items: center; gap: 1.2rem; }
+nav .active { font-weight: 700; }
+.content, .startup { max-width: 780px; margin: 3rem auto; padding: 0 1.25rem; }
+h1 { font-size: clamp(1.9rem, 5vw, 2.8rem); line-height: 1.15; margin: .5rem 0 1rem; letter-spacing: -.035em; }
+h2 { font-size: 1.4rem; margin-top: 0; }
+h3 { margin-bottom: .25rem; }
+.eyebrow { text-transform: uppercase; font-size: .75rem; letter-spacing: .16em; font-weight: 700; color: #52715c; }
+.card { background: #fff; border: 1px solid #dce1d9; border-radius: 14px; padding: clamp(1.25rem, 4vw, 2.5rem); margin: 1.5rem 0; }
+.auth-card { max-width: 520px; margin: 3rem auto; }
+fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+label { display: block; font-weight: 650; margin: 1rem 0 .4rem; }
+input, textarea { display: block; width: 100%; border: 1px solid #a8b5ab; border-radius: 6px; padding: .75rem; font: inherit; color: inherit; background: #fff; }
+textarea { resize: vertical; }
+button { border: 1px solid #285c47; background: #285c47; color: #fff; border-radius: 6px; padding: .7rem 1.1rem; font: inherit; font-weight: 600; cursor: pointer; }
+fieldset button { margin-top: 1.4rem; }
+button.secondary { color: #285c47; background: #fff; }
+button:disabled, fieldset:disabled { opacity: .6; cursor: default; }
+.hint { color: #5f6c63; font-size: .85rem; font-weight: 400; }
+.problem, .notice, .success { padding: 1rem; border-radius: 6px; overflow-wrap: anywhere; }
+.problem { background: #fff0ed; color: #852c20; border: 1px solid #efc1b7; }
+.notice { background: #fcf2d9; color: #624b1b; }
+.success { background: #e6f2e8; color: #225032; }
+.validation-message, .validation-errors { color: #a02d20; }
+.invalid { border-color: #a02d20; }
+.biography { white-space: pre-wrap; overflow-wrap: anywhere; }
+#blazor-error-ui { display: none; background: #fff0ed; color: #852c20; position: fixed; bottom: 0; width: 100%; padding: 1rem; }
+#blazor-error-ui .dismiss { cursor: pointer; float: right; }
+.loading-progress { display: block; width: 5rem; height: 5rem; margin: 20vh auto 1rem; }
+.loading-progress circle { fill: none; stroke: #285c47; stroke-width: 5; }
+.loading-progress-text { text-align: center; }
+.loading-progress-text:after { content: "Loading artist panel…"; }
+@media (max-width: 520px) { .topbar { align-items: flex-start; } nav { flex-wrap: wrap; justify-content: flex-end; gap: .65rem; } .content { margin-top: 2rem; } }
+
+.button-link { display: inline-block; border: 1px solid #285c47; border-radius: 6px; padding: .7rem 1.1rem; background: #285c47; color: #fff; font-weight: 600; text-decoration: none; }
+.action-row, .exhibition-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .8rem; }
+.exhibition-list { list-style: none; padding: 0; }
+.exhibition-card { overflow-wrap: anywhere; }
+.exhibition-heading { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: .75rem; }
+.exhibition-heading h2 { flex: 1 1 200px; margin-bottom: .5rem; }
+.exhibition-status { display: inline-block; border-radius: 999px; padding: .2rem .75rem; background: #edf0ed; font-size: .85rem; font-weight: 650; }
+.exhibition-status.published { background: #e6f2e8; color: #225032; }
+.exhibition-status.draft { background: #fcf2d9; color: #624b1b; }
+.exhibition-status.deactivated { background: #ece9e6; color: #514c47; }
+.exhibition-description { white-space: pre-wrap; overflow-wrap: anywhere; }
+.exhibition-code { overflow-wrap: anywhere; }
+.exhibition-code code { user-select: all; font-size: 1rem; }

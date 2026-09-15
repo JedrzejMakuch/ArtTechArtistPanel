@@ -1,0 +1,15 @@
+@if (Problem is not null)
+{
+    <div class="problem" role="alert">
+        <strong>@Problem.Title</strong>
+        @if (!string.IsNullOrWhiteSpace(Problem.Detail)) { <p>@Problem.Detail</p> }
+        @if (Problem.Errors is { Count: > 0 })
+        {
+            <ul>
+                @foreach (var message in Problem.Errors.Values.SelectMany(x => x).Distinct())
+                { <li>@message</li> }
+            </ul>
+        }
+    </div>
+}
+@code { [Parameter] public ApiProblem? Problem { get; set; } }
