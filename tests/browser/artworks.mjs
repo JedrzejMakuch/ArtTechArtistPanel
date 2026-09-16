@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
+import { resolve } from 'node:path';
+import { readFile } from 'node:fs/promises';
 
 export async function artworks(page, panel, api, exhibition) {
     const url = path => new URL(path, panel).href;
     const list = `exhibitions/${exhibition.id}/artworks`;
+    const fixture = name => resolve(fileURLToPath(new URL('../../../ArtTechBackend/ArtTechGallery.API/DevelopmentAssets/Artworks/', import.meta.url)), name);
     await page.goto(url(`exhibitions/${exhibition.id}`));
     assert.equal(await page.locator('form').count(), 0);
     await page.getByRole('heading', { name: 'No artworks yet' }).waitFor();
@@ -13,7 +16,8 @@ export async function artworks(page, panel, api, exhibition) {
     await page.getByLabel('Creation year').fill('2025');
     await page.getByLabel('Width (cm)').fill('80.25');
     await page.getByLabel('Height (cm)').fill('60.5');
-    await page.getByLabel('Image URL').fill(new URL('dev-assets/artworks/morning-forest.jpg', api).href);
+    await page.locator('#artwork-image').setInputFiles(fixture('morning-forest.jpg'));
+    await page.getByText('Selected: morning-forest.jpg', { exact: true }).waitFor();
     await page.getByLabel('Display order', { exact: true }).fill('12');
     const response = page.waitForResponse(r => r.url().endsWith(`/api/artist/${list}`) && r.request().method() === 'POST');
     await page.getByRole('button', { name: 'Create artwork', exact: true }).click();
@@ -21,10 +25,16 @@ export async function artworks(page, panel, api, exhibition) {
     assert.equal(created.widthCm, 80.25);
     await page.waitForURL(url(`exhibitions/${exhibition.id}`));
     await page.getByRole("link", { name: "Edit artwork", exact: true }).click();
+    await page.getByText('This artwork already has an image.', { exact: false }).waitFor();
     await page.getByLabel('Title', { exact: true }).fill('Edited painting');
     await page.getByLabel('Width (cm)').fill('42.12');
     await page.getByLabel('Display order', { exact: true }).fill('2');
+    const metadataRequest = page.waitForRequest(r => r.url().endsWith(`/api/artist/${list}/${created.id}`) && r.method() === 'PUT');
+    const metadataResponse = page.waitForResponse(r => r.url().endsWith(`/api/artist/${list}/${created.id}`) && r.request().method() === 'PUT');
     await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+    assert.equal(/name(?:=|=\")image/.test((await metadataRequest).postData()), false);
+    const metadataOnly = await (await metadataResponse).json();
+    assert.equal(metadataOnly.imageUrl, created.imageUrl);
     await page.waitForURL(url(`exhibitions/${exhibition.id}`));
     await page.getByRole("link", { name: "Edited painting", exact: true }).waitFor();
     const publicUrl = new URL(`api/artworks/${created.id}`, api).href;
@@ -33,11 +43,32 @@ export async function artworks(page, panel, api, exhibition) {
     assert.equal(visible.imageUrl, created.imageUrl);
     const publicExhibition = await (await page.request.get(new URL(`api/exhibitions/${exhibition.exhibitionCode}`, api).href)).json();
     assert.equal(publicExhibition.artworks[0].sortOrder, 2);
-    assert.equal((await page.request.get(created.imageUrl)).status(), 200);
+    const initialImage = await page.request.get(created.imageUrl);
+    assert.equal(initialImage.status(), 200);
+    assert.equal(initialImage.headers()['content-type'], 'image/jpeg');
+    assert.deepEqual(new Uint8Array(await initialImage.body()), new Uint8Array(await readFile(fixture('morning-forest.jpg'))));
     await page.reload();
     await page.getByRole('link', { name: 'Edit artwork', exact: true }).click();
     await page.getByLabel('Title', { exact: true }).waitFor();
     assert.equal(await page.getByLabel('Title', { exact: true }).inputValue(), 'Edited painting');
+    await page.locator('#artwork-image').setInputFiles(fixture('quiet-lake.png'));
+    await page.getByText('Selected: quiet-lake.png', { exact: true }).waitFor();
+    const replacementResponse = page.waitForResponse(r => r.url().endsWith(`/api/artist/${list}/${created.id}`) && r.request().method() === 'PUT');
+    await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+    const replaced = await (await replacementResponse).json();
+    assert.notEqual(replaced.imageUrl, created.imageUrl);
+    await page.waitForURL(url(`exhibitions/${exhibition.id}`));
+    const replacementImage = await page.request.get(replaced.imageUrl);
+    assert.equal(replacementImage.status(), 200);
+    assert.equal(replacementImage.headers()['content-type'], 'image/png');
+    assert.deepEqual(new Uint8Array(await replacementImage.body()), new Uint8Array(await readFile(fixture('quiet-lake.png'))));
+    await page.getByRole('button', { name: 'Deactivate', exact: true }).click();
+    await page.getByRole('button', { name: 'Confirm deactivation', exact: true }).click();
+    assert.equal((await page.request.get(replaced.imageUrl)).status(), 404);
+    await page.getByRole('button', { name: 'Republish', exact: true }).click();
+    assert.equal((await page.request.get(replaced.imageUrl)).status(), 200);
+    await page.getByRole('link', { name: 'Edited painting', exact: true }).click();
+    await page.getByLabel('Title', { exact: true }).waitFor();
     // A real invalid field is rejected locally without losing the rest of the form.
     await page.getByLabel('Width (cm)').fill('0');
     await page.getByRole('button', { name: 'Save changes', exact: true }).click();
@@ -68,5 +99,5 @@ export async function artworks(page, panel, api, exhibition) {
     assert.equal((await page.request.get(publicUrl)).status(), 404);
     assert.equal((await (await page.request.get(new URL(`api/exhibitions/${exhibition.exhibitionCode}`, api).href)).json()).artworks.length, 0);
     await page.setViewportSize({ width: 1280, height: 900 });
-    console.log('PASS real artwork create/edit/order/public metadata/image/delete, reload, escaped text and responsive editor');
+    console.log('PASS real artwork JPG upload, metadata-only edit, PNG replacement, public image lifecycle/delete, reload and responsive editor');
 }

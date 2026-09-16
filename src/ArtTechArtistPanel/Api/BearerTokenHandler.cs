@@ -1,11 +1,13 @@
 using System.Net;
 using System.Net.Http.Headers;
 using ArtTechArtistPanel.Auth;
+using ArtTechArtistPanel.Contracts;
 
 namespace ArtTechArtistPanel.Api;
 
 public sealed class BearerTokenHandler(AuthSession session, Uri backend) : DelegatingHandler
 {
+    private const long MaximumReplayBodyBytes = ArtworkUpload.MaximumBytes + 128 * 1024;
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         if (request.RequestUri is null || !backend.IsBaseOf(request.RequestUri))
@@ -14,7 +16,8 @@ public sealed class BearerTokenHandler(AuthSession session, Uri backend) : Deleg
         cancellationToken.ThrowIfCancellationRequested();
         if (lease is null) return new HttpResponseMessage(HttpStatusCode.Unauthorized);
 
-        // Buffer the small JSON body for the single auth retry. Never retry network/5xx failures.
+        // Keep a bounded copy so JSON and multipart requests can be replayed exactly once after a 401.
+        if (request.Content is not null) await request.Content.LoadIntoBufferAsync(MaximumReplayBodyBytes, cancellationToken);
         var body = request.Content is null ? null : await request.Content.ReadAsByteArrayAsync(cancellationToken);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", lease.Token);
         var response = await base.SendAsync(request, cancellationToken);

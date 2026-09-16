@@ -6,6 +6,7 @@ using ArtTechArtistPanel.Pages;
 using Bunit;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Components.Forms;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ArtTechArtistPanel.Tests;
@@ -28,8 +29,10 @@ public sealed class ArtworkTests : BunitContext
     {
         cut.Find("#artwork-title").Change("New painting"); cut.Find("#artwork-year").Change("2025");
         cut.Find("#artwork-width").Change("80.25"); cut.Find("#artwork-height").Change("60.5");
-        cut.Find("#artwork-image").Change("https://images.example.test/a.png"); cut.Find("#artwork-order").Change("9");
+        cut.Find("#artwork-order").Change("9");
     }
+    private static void Upload(IRenderedComponent<ArtworkEditor> cut, byte[]? bytes = null, string name = "painting.jpg", string mime = "image/jpeg") =>
+        cut.FindComponent<InputFile>().UploadFiles(InputFileContent.CreateFromBinary(bytes ?? [1, 2, 3, 4], name, null, mime));
     [Fact]
     public void EmptyAndPopulatedListsPreserveServerOrder()
     {
@@ -44,7 +47,7 @@ public sealed class ArtworkTests : BunitContext
     }
     [Theory]
     [InlineData(false)] [InlineData(true)]
-    public void SaveUsesOnlyEditableMetadataAndCanonicalResponse(bool edit)
+    public async Task SaveUsesMultipartMetadataAndCanonicalResponse(bool edit)
     {
         using var session = new SessionFixture(); var row = Row(); int writes = 0;
         using var http = StubHandler.Client(async r =>
@@ -52,12 +55,14 @@ public sealed class ArtworkTests : BunitContext
             if (r.Method == HttpMethod.Get) return StubHandler.Json(row);
             writes++; Assert.Equal(edit ? HttpMethod.Put : HttpMethod.Post, r.Method);
             Assert.StartsWith($"/api/artist/exhibitions/{parent}/artworks", r.RequestUri!.AbsolutePath);
-            var json = JsonDocument.Parse(await r.Content!.ReadAsStringAsync());
-            Assert.Equal(new[] { "creationYear", "description", "heightCm", "imageUrl", "sortOrder", "title", "widthCm" }, json.RootElement.EnumerateObject().Select(x => x.Name).Order());
-            Assert.Equal(80.25m, json.RootElement.GetProperty("widthCm").GetDecimal());
+            Assert.Equal("multipart/form-data", r.Content!.Headers.ContentType!.MediaType);
+            var body = await r.Content.ReadAsStringAsync();
+            foreach (var field in new[] { "title", "description", "creationYear", "widthCm", "heightCm", "sortOrder" }) Assert.Contains($"name={field}", body);
+            Assert.DoesNotContain("imageUrl", body);
+            Assert.Equal(!edit, body.Contains("name=image", StringComparison.Ordinal));
             return StubHandler.Json(row);
-        }); Setup(session, http); var cut = Editor(edit ? row.Id : null); Fill(cut); cut.Find("form").Submit();
-        Assert.Equal(1, writes);
+        }); Setup(session, http); var cut = Editor(edit ? row.Id : null); Fill(cut); if (!edit) Upload(cut); cut.Find("form").Submit();
+        cut.WaitForAssertion(() => Assert.Equal(1, writes));
         if (edit) Assert.Equal("Painting", cut.Find("#artwork-title").GetAttribute("value"));
         Assert.EndsWith($"exhibitions/{parent}", Services.GetRequiredService<NavigationManager>().Uri);
     }
@@ -98,14 +103,14 @@ public sealed class ArtworkTests : BunitContext
         Assert.EndsWith($"exhibitions/{parent}", Services.GetRequiredService<NavigationManager>().Uri);
     }
     [Fact]
-    public void InvalidDimensionsAndUrlsDoNotWrite()
+    public void InvalidDimensionsDoNotWrite()
     {
         using var session = new SessionFixture(); int calls = 0;
         using var http = StubHandler.Client(_ => { calls++; return Task.FromResult(StubHandler.Json(Row())); }); Setup(session, http);
         var cut = Editor(); Fill(cut);
         foreach (var value in new[] { "0", "-1", "1001", "1.234", "not a number" })
         { cut.Find("#artwork-width").Change(value); cut.Find("form").Submit(); Assert.Equal(0, calls); }
-        cut.Find("#artwork-width").Change("80"); cut.Find("#artwork-image").Change("javascript:alert(1)"); cut.Find("form").Submit(); Assert.Equal(0, calls);
+        cut.Find("#artwork-width").Change("80"); cut.Find("form").Submit(); Assert.Equal(0, calls);
     }
     [Fact]
     public void InactiveProfileIsReadOnly()
@@ -175,4 +180,55 @@ public sealed class ArtworkTests : BunitContext
         });
         await new ArtworkApiClient(http).DeleteAsync(parent, Guid.NewGuid()); Assert.Equal(2, calls);
     }
+
+    [Fact]
+    public void CreateRequiresImageAndNormalFormHasNoImageUrlTextbox()
+    {
+        using var session = new SessionFixture(); int writes = 0;
+        using var http = StubHandler.Client(r => { if (r.Method == HttpMethod.Get) return Task.FromResult(StubHandler.Json(Row())); writes++; return Task.FromResult(StubHandler.Json(Row())); });
+        Setup(session, http); var cut = Editor(); Fill(cut); cut.Find("form").Submit();
+        Assert.Equal(0, writes); Assert.Contains("Select an artwork image", cut.Markup);
+        Assert.Empty(cut.FindAll("#artwork-image[type=text]")); Assert.DoesNotContain("Image URL", cut.Markup);
+    }
+
+    [Theory]
+    [InlineData("painting.jpg", "image/jpeg", true)]
+    [InlineData("painting.png", "image/png", true)]
+    [InlineData("painting.gif", "image/gif", false)]
+    public async Task FileSelectionShowsStatusAndRejectsObviousUnsupportedTypes(string name, string mime, bool accepted)
+    {
+        using var session = new SessionFixture(); using var http = StubHandler.Client(_ => Task.FromResult(StubHandler.Json(Row())));
+        Setup(session, http); var cut = Editor(); Upload(cut, [8, 7, 6], name, mime);
+        Assert.Equal(accepted, cut.Markup.Contains("Selected: " + name, StringComparison.Ordinal));
+        Assert.Equal(!accepted, cut.Markup.Contains("Select a JPG or PNG image.", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task OversizedSelectionIsRejectedBeforeSaving()
+    {
+        using var session = new SessionFixture(); int writes = 0;
+        using var http = StubHandler.Client(r => { writes++; return Task.FromResult(StubHandler.Json(Row())); }); Setup(session, http);
+        var cut = Editor(); Upload(cut, new byte[ArtworkUpload.MaximumBytes + 1]); cut.Find("form").Submit();
+        Assert.Contains("must not exceed 10 MiB", cut.Markup); Assert.Equal(0, writes);
+    }
+
+    [Fact]
+    public async Task MultipartClientReplaysExactImageAndMetadataAfterSingle401()
+    {
+        using var session = new SessionFixture(); await session.Login(); var bytes = new byte[] { 0, 1, 2, 3, 254, 255 }; var bodies = new List<byte[]>(); int calls = 0;
+        using var http = session.Authenticated(async request =>
+        {
+            calls++; bodies.Add(await request.Content!.ReadAsByteArrayAsync());
+            return calls == 1 ? new(HttpStatusCode.Unauthorized) : StubHandler.Json(Row());
+        });
+        var metadata = new SaveArtworkRequest { Title = "Replay", CreationYear = 2025, WidthCm = 80, HeightCm = 60, SortOrder = 2 };
+        await new ArtworkApiClient(http).SaveAsync(parent, null, metadata, new ArtworkUpload("a.jpg", "image/jpeg", bytes));
+        Assert.Equal(2, calls); Assert.Equal(bodies[0], bodies[1]);
+        var text = System.Text.Encoding.Latin1.GetString(bodies[0]);
+        Assert.Contains("name=title", text); Assert.Contains("Replay", text); Assert.Contains("name=image", text);
+        Assert.True(Contains(bodies[0], bytes));
+    }
+
+    private static bool Contains(byte[] source, byte[] expected) => Enumerable.Range(0, source.Length - expected.Length + 1)
+        .Any(start => source.AsSpan(start, expected.Length).SequenceEqual(expected));
 }

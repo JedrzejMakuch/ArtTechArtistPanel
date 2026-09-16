@@ -237,19 +237,24 @@ From an owned exhibition, choose **Manage artworks**. Protected routes are:
 
 The forms use the real nested backend API through the existing bearer handler.
 Editable fields are title, description, creation year, physical width/height in
-centimeters, image URL and display order. Width/height are 1–1000 cm with at most
-two fractional decimal places. Lower order values appear first; ties/gaps follow
-the backend's deterministic ordering. Client validation aids input; the backend
-remains authoritative for validation, ownership and publication visibility.
+centimeters, image selection and display order. Create requires one JPG or PNG;
+edit retains the current image unless a replacement is selected. Files are
+buffered in memory only for the request and are never stored in browser storage.
+The client limits selections to 10 MiB and obvious JPG/PNG types; the backend
+remains authoritative for content, pixel dimensions, validation, ownership and
+publication visibility. Width/height are 1–1000 cm with at most two fractional
+decimal places. Lower order values appear first; ties/gaps follow the backend's
+deterministic ordering.
 
 Artwork changes are allowed in all exhibition states. Published changes take
 effect immediately. Inactive profiles are read-only. Failed saves keep input;
 deletion needs confirmation and never deletes the referenced image. Requests are
 disabled while pending, and late responses after navigation/logout are ignored.
 
-Image URL is an external HTTP(S) reference to viewer-reachable JPG/PNG content,
-not an upload or managed storage key. The panel does not fetch image previews.
-URL reachability, content and lifetime remain the artist's responsibility.
+The DTO still carries the server-provided image URL for public/viewer
+compatibility, but it is not an editable form field. The panel does not fetch
+image previews; the backend owns validation and local runtime storage. Production
+storage is a later milestone.
 Unsaved edits do not survive navigation/reload. Creation has no idempotency key;
 after a lost response, check the list before retrying. Concurrent edits follow
 the existing backend behavior without revision-conflict detection.

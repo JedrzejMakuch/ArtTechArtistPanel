@@ -159,3 +159,34 @@ only the disposable UX database; validation hosts/database were cleaned up.
 
 Other browsers, screen readers, production hosting and physical mobile checks
 remain manual work. Storage/upload and the next milestone were not started.
+
+## File upload foundation — panel validation 2026-09-16
+
+The panel now uses the backend multipart artwork contract. Create requires one
+JPG or PNG selected with `InputFile`; edit retains the current image unless a
+replacement is selected. The normal form no longer exposes an ImageUrl textbox.
+
+| Check | Result |
+| --- | --- |
+| Restore | Passed |
+| Debug build | Passed, 0 warnings/errors |
+| Full panel xUnit/bUnit suite | 93 passed, 0 failed/skipped |
+| Release publish | Passed; optional wasm-tools workload notice remains |
+| Chrome against published Release assets | Passed, no browser runtime errors |
+| Upload/public image checks | JPG create, metadata-only retain, PNG replacement and exact response bytes passed |
+| Responsive checks | No horizontal overflow at 320, 390 or 1280 px |
+| Multipart 401 replay | Automated test passed: one refresh/replay preserved metadata and exact image bytes |
+
+The real browser flow used an isolated PostgreSQL database, isolated runtime
+storage and the existing backend JPG/PNG fixtures. It covered registration,
+profile, exhibition creation/publication, JPG upload, metadata-only edit,
+anonymous image delivery, PNG replacement, deactivation/republish, reload and
+deletion. Obvious unsupported and oversized files are rejected before submit;
+backend content and pixel validation remains authoritative. Temporary database,
+storage and test hosts were cleaned up after validation. Backend and Unity were
+not changed.
+
+Remaining checks are production hosting, HTTPS/CORS/CSP, other browsers,
+screen-reader accessibility and physical Android access to a configured local
+network origin. Production storage remains out of scope; the current backend
+local runtime storage is the development foundation.
