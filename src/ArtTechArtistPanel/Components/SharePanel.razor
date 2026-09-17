@@ -1,0 +1,60 @@
+@using ArtTechArtistPanel.Sharing
+@using Microsoft.JSInterop
+@using Net.Codecrete.QrCodeGenerator
+@inject ShareLinkService Links
+@inject IJSRuntime JS
+
+<section class="share-panel" aria-label="Share @Title">
+    <h3>Share</h3>
+    @if (!Enabled)
+    {
+        <p class="hint">@UnavailableMessage</p>
+    }
+    else if (!Links.IsConfigured)
+    {
+        <p class="notice">Public sharing is not configured for this deployment.</p>
+    }
+    else
+    {
+        <p class="share-link"><a href="@publicLink" target="_blank" rel="noopener">@publicLink</a></p>
+        <div class="action-row">
+            <button type="button" class="secondary" @onclick="Copy">Copy link</button>
+            <button type="button" class="secondary" @onclick="() => showQr = !showQr">@(showQr ? "Hide QR" : "Show QR")</button>
+        </div>
+        @if (copied) { <p class="success" role="status">Link copied.</p> }
+        @if (copyFailed) { <p class="notice" role="alert">Copy failed. Select and copy the link above.</p> }
+        @if (showQr)
+        {
+            <div class="share-qr" aria-label="QR code for @Title">@((MarkupString)svg)</div>
+            <a class="button-link" download="@DownloadName" href="@downloadUrl">Download QR (SVG)</a>
+            <p class="hint">The QR contains the same public link shown above.</p>
+        }
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public PublicContentKind Kind { get; set; }
+    [Parameter, EditorRequired] public string Code { get; set; } = "";
+    [Parameter] public string Title { get; set; } = "public content";
+    [Parameter] public bool Enabled { get; set; } = true;
+    [Parameter] public string UnavailableMessage { get; set; } = "This content is not publicly shareable.";
+    private string publicLink = "", svg = "", downloadUrl = "";
+    private bool showQr, copied, copyFailed;
+    private string DownloadName => $"{Kind.ToString().ToLowerInvariant()}-{Code}-qr.svg";
+
+    protected override void OnParametersSet()
+    {
+        publicLink = svg = downloadUrl = ""; copied = copyFailed = false;
+        if (!Enabled || !Links.IsConfigured) return;
+        publicLink = Links.CreatePublicLink(Kind, Code);
+        svg = QrCode.EncodeText(publicLink, QrCode.Ecc.Medium).ToSvgString(4);
+        downloadUrl = "data:image/svg+xml;base64," + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(svg));
+    }
+
+    private async Task Copy()
+    {
+        copied = copyFailed = false;
+        try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", publicLink); copied = true; }
+        catch (JSException) { copyFailed = true; }
+    }
+}

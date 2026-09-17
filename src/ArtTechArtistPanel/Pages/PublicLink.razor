@@ -1,0 +1,35 @@
+@page "/view/{Kind}/{Code}"
+@using ArtTechArtistPanel.Sharing
+@inject ShareLinkService Links
+
+<PageTitle>Open public art · ArtTech</PageTitle>
+<p class="eyebrow">Public art</p>
+@if (contentKind is null)
+{
+    <h1>Invalid link</h1>
+    <p class="notice">This public link is malformed.</p>
+}
+else
+{
+    <h1>Open @(contentKind == PublicContentKind.Profile ? "artist profile" : "exhibition")</h1>
+    <section class="card public-link-landing">
+        <p>Open this public content in the ArtTech Android viewer. No viewer account is required.</p>
+        <a class="button-link" href="@androidLink">Open Android app</a>
+        <p class="hint">If the app is not installed, keep this page and install it when a download is available.</p>
+        <p class="hint">Public code: <code>@Code</code></p>
+    </section>
+}
+
+@code {
+    [Parameter] public string Kind { get; set; } = "";
+    [Parameter] public string Code { get; set; } = "";
+    private PublicContentKind? contentKind;
+    private string androidLink = "";
+    protected override void OnParametersSet()
+    {
+        contentKind = Kind.ToLowerInvariant() switch
+        { "profile" => PublicContentKind.Profile, "exhibition" => PublicContentKind.Exhibition, _ => null };
+        try { if (contentKind is not null) androidLink = ShareLinkService.CreateAndroidLink(contentKind.Value, Code); }
+        catch (ArgumentException) { contentKind = null; androidLink = ""; }
+    }
+}

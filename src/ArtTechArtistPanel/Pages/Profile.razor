@@ -50,6 +50,8 @@ else
             <p class="hint">Profile code: @profile.ProfileCode</p>
             @if (profile.IsActive) { <button @onclick="() => editing = true">Edit profile</button> }
             <p><a href="exhibitions">My exhibitions</a></p>
+            <SharePanel Kind="PublicContentKind.Profile" Code="@profile.ProfileCode" Title="@profile.DisplayName"
+                Enabled="profile.IsActive" UnavailableMessage="Activate this profile before sharing it." />
         </section>
     }
     @if (saved) { <p class="success" role="status">Profile saved.</p> }

@@ -17,7 +17,10 @@ http.createServer(async (request, response) => {
         const pathname = decodeURIComponent(new URL(request.url, address).pathname);
         if (pathname === '/appsettings.json') {
             response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-            response.end(JSON.stringify({ Api: { BaseUrl: process.env.ARTTECH_API_URL } }));
+            response.end(JSON.stringify({
+                Api: { BaseUrl: process.env.ARTTECH_API_URL },
+                ShareLinks: { PublicBaseUrl: process.env.ARTTECH_PANEL_URL.replace(/\/$/, '') }
+            }));
             return;
         }
         const relative = pathname === '/' || !path.extname(pathname) ? 'index.html' : pathname.slice(1);

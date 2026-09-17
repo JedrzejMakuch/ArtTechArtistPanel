@@ -4,6 +4,7 @@ using ArtTechArtistPanel;
 using ArtTechArtistPanel.Api;
 using ArtTechArtistPanel.Auth;
 using ArtTechArtistPanel.Configuration;
+using ArtTechArtistPanel.Sharing;
 using Microsoft.AspNetCore.Components.Authorization;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
@@ -20,6 +21,7 @@ builder.Services.AddScoped<AuthSession>();
 builder.Services.AddScoped<AuthenticationStateProvider, PanelAuthenticationStateProvider>();
 builder.Services.AddScoped(_ => new HttpClient { BaseAddress = options.BaseUri, Timeout = TimeSpan.FromSeconds(30) });
 builder.Services.AddScoped<IdentityApiClient>();
+builder.Services.AddSingleton(new ShareLinkService(builder.Configuration["ShareLinks:PublicBaseUrl"]));
 builder.Services.AddScoped(sp => new ArtistProfileApiClient(
     new HttpClient(new BearerTokenHandler(sp.GetRequiredService<AuthSession>(), options.BaseUri!)
     { InnerHandler = new HttpClientHandler() }) { BaseAddress = options.BaseUri, Timeout = TimeSpan.FromSeconds(30) },

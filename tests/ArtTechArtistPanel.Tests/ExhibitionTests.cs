@@ -5,6 +5,7 @@ using ArtTechArtistPanel.Auth;
 using ArtTechArtistPanel.Configuration;
 using ArtTechArtistPanel.Contracts;
 using ArtTechArtistPanel.Pages;
+using ArtTechArtistPanel.Sharing;
 using Bunit;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Authorization;
@@ -17,6 +18,7 @@ namespace ArtTechArtistPanel.Tests;
 
 public sealed class ExhibitionTests : BunitContext
 {
+    public ExhibitionTests() => Services.AddSingleton(new ShareLinkService("https://gallery.example/app"));
     private static void Edit(IRenderedComponent<ExhibitionEditor> cut) { cut.FindAll("button").SingleOrDefault(x => x.TextContent == "Edit exhibition")?.Click(); }
     private static OwnExhibitionDto Exhibition(string status = "draft", string title = "My exhibition") =>
         new(Guid.NewGuid(), "abcd1234abcd1234", title, "Description", 2, status, DateTime.UtcNow);

@@ -19,6 +19,8 @@ export async function exhibitions(page, panel, api) {
     assert.equal(created.status, 'draft');
     await page.waitForURL(url(`exhibitions/${created.id}`));
     await status('Draft');
+    assert.equal(await page.locator('.share-link').count(), 0);
+    assert.ok((await page.locator('.share-panel').textContent()).includes('Publish this draft'));
     assert.equal((await page.request.get(new URL(`api/exhibitions/${created.exhibitionCode}`, api).href)).status(), 404);
     assert.equal(await page.locator('form').count(), 0);
     await page.getByRole('button', { name: 'Edit exhibition', exact: true }).click();
@@ -29,6 +31,22 @@ export async function exhibitions(page, panel, api) {
     await page.getByRole('button', { name: 'Publish', exact: true }).click();
     await status('Published');
     assert.ok((await page.locator('.exhibition-code').innerText()).includes(created.exhibitionCode));
+    const shareUrl = url(`view/exhibition/${created.exhibitionCode}`);
+    assert.equal(await page.locator('.share-link a').getAttribute('href'), shareUrl);
+    await page.getByRole('button', { name: 'Copy link', exact: true }).click();
+    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), shareUrl);
+    await page.getByRole('button', { name: 'Show QR', exact: true }).click();
+    assert.equal(await page.locator('.share-qr svg').count(), 1);
+    assert.ok((await page.locator('a[download]').getAttribute('href')).startsWith('data:image/svg+xml;base64,'));
+    await page.setViewportSize({ width: 320, height: 900 });
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Sharing overflow at 320px');
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const landing = await page.context().newPage();
+    await landing.goto(shareUrl);
+    await landing.getByRole('heading', { name: 'Open exhibition', exact: true }).waitFor();
+    assert.equal(await landing.getByRole('link', { name: 'Open Android app', exact: true }).getAttribute('href'),
+        `arttechgallery://exhibition/${created.exhibitionCode}`);
+    await landing.close();
     const publicResponse = await page.request.get(new URL(`api/exhibitions/${created.exhibitionCode}`, api).href);
     assert.equal(publicResponse.status(), 200);
     assert.equal((await publicResponse.json()).title, 'Edited browser exhibition');
@@ -41,9 +59,12 @@ export async function exhibitions(page, panel, api) {
     await page.getByRole('button', { name: 'Deactivate', exact: true }).click();
     await page.getByRole('button', { name: 'Confirm deactivation', exact: true }).click();
     await status('Deactivated');
+    assert.equal(await page.locator('.share-link').count(), 0);
+    assert.ok((await page.locator('.share-panel').textContent()).includes('Republish this exhibition'));
     assert.equal((await page.request.get(new URL(`api/exhibitions/${created.exhibitionCode}`, api).href)).status(), 404);
     await page.getByRole('button', { name: 'Republish', exact: true }).click();
     await status('Published');
+    assert.equal(await page.locator('.share-link a').getAttribute('href'), shareUrl);
     assert.equal((await page.request.get(new URL(`api/exhibitions/${created.exhibitionCode}`, api).href)).status(), 200);
     console.log('PASS real exhibition draft/create/edit/publish/deactivate/republish, stable code, anonymous visibility and reload');
 

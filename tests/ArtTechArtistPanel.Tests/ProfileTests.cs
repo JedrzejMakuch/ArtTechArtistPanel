@@ -3,6 +3,7 @@ using System.Text.Json;
 using ArtTechArtistPanel.Api;
 using ArtTechArtistPanel.Contracts;
 using ArtTechArtistPanel.Pages;
+using ArtTechArtistPanel.Sharing;
 using Bunit;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -10,6 +11,7 @@ namespace ArtTechArtistPanel.Tests;
 
 public sealed class ProfileTests : BunitContext
 {
+    public ProfileTests() => Services.AddSingleton(new ShareLinkService("https://gallery.example/app"));
     [Fact]
     public void ExistingProfileOpensDetailsAndCancelDoesNotRefetchOrSave()
     {

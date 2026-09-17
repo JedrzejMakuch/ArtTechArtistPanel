@@ -15,7 +15,8 @@ and a browser. Node is needed only for the optional Playwright smoke test.
 
 1. In `src/ArtTechArtistPanel/wwwroot`, copy `appsettings.Development.example.json`
    to `appsettings.Development.json`. Set `Api:BaseUrl` to your backend's reachable
-   HTTP(S) base address. Include the application's base path if it has one.
+   HTTP(S) base address. Set `ShareLinks:PublicBaseUrl` to the panel's externally
+   reachable origin/base path; canonical links are built beneath it.
    Create this file **before building**. It is ignored by Git and excluded from publish.
 2. In the backend's ignored development configuration, add
    `Cors:AllowedOrigins` as an array containing the panel's exact origin
@@ -119,8 +120,9 @@ timestamps, and lifecycle state are never included in save requests.
 Draft shows Publish, Published shows Deactivate, and Deactivated shows Republish.
 Deactivation has an inline confirm/cancel step. Transition POSTs send `{}` and use
 the returned status and metadata; the backend remains the lifecycle authority.
-Unknown states have no publication actions. Published exhibitions show a selectable
-stable ExhibitionCode; there is no invented public URL, QR code or sharing flow.
+Unknown states have no publication actions. Published exhibitions show their stable
+ExhibitionCode and sharing controls. Draft and Deactivated exhibitions show why no
+public link is available.
 
 Forms/actions disable during writes and handlers reject duplicate submissions.
 Unsaved metadata must be saved before publication actions; published metadata edits
@@ -135,9 +137,36 @@ existing recoverable error messages and do not end the session.
 The existing bearer handler, session storage, refresh serialization, single 401
 retry, ProblemAlert, authentication provider, and generation checks are reused.
 Changing detail routes cancels old requests and prevents late results replacing
-the current form. No backend/Unity changes or additional application dependencies
-were required. Styling follows the existing panel, with wrapping cards/actions and
-text status badges. This is functional MVP UI, not the final visual redesign.
+the current form. Styling follows the existing panel, with wrapping cards/actions
+and text status badges. This is functional MVP UI, not the final visual redesign.
+
+## Public sharing
+
+The panel constructs canonical links from configuration and server-returned public
+codes only:
+
+```text
+{ShareLinks:PublicBaseUrl}/view/profile/{ProfileCode}
+{ShareLinks:PublicBaseUrl}/view/exhibition/{ExhibitionCode}
+```
+
+Profile details expose sharing while the profile is active. Exhibition details expose
+sharing only while the exhibition is Published. Copy uses the browser Clipboard API
+with a selectable-link fallback. QR codes are generated locally as SVG using
+`Net.Codecrete.QrCodeGenerator`; no link/code is sent to a QR service. The QR and SVG
+download encode the canonical HTTP(S) link exactly; production configuration must use
+HTTPS.
+
+The public `/view/profile/{code}` and `/view/exhibition/{code}` routes are anonymous
+fallback pages. Their **Open Android app** action translates the canonical route to
+`arttechgallery://profile/{code}` or `arttechgallery://exhibition/{code}`. Unity still
+makes the authoritative public API request, so a missing, inactive, Draft or
+Deactivated resource does not become visible through sharing.
+
+Production hosting must provide SPA fallback for `/view/...` and configure an HTTPS
+`ShareLinks:PublicBaseUrl`. The custom-scheme button is the current MVP bridge. Direct,
+verified HTTPS Android App Links require the production domain, signing certificate,
+matching manifest hosts and `/.well-known/assetlinks.json`; they are not claimed yet.
 
 ## Validation commands
 
@@ -180,8 +209,9 @@ Screenshots go to ignored `artifacts/`. Tokens and passwords are not logged.
 ## Publish/deployment
 
 Publish output is a static site under `artifacts/publish/wwwroot`. Development
-configuration/examples are excluded. Supply `Api:BaseUrl` in the published
-`appsettings.json` during deployment; the shared source value is intentionally blank.
+configuration/examples are excluded. Supply `Api:BaseUrl` and
+`ShareLinks:PublicBaseUrl` in the published `appsettings.json` during deployment;
+the shared source values are intentionally blank.
 Server environment variables cannot directly configure downloaded WASM code.
 If your host serves precompressed `.br`/`.gz` configuration files, regenerate those
 sidecars after supplying configuration, or disable precompressed serving for JSON.
@@ -259,4 +289,5 @@ Unsaved edits do not survive navigation/reload. Creation has no idempotency key;
 after a lost response, check the list before retrying. Concurrent edits follow
 the existing backend behavior without revision-conflict detection.
 
-Production upload/storage, QR and statistics are not implemented.
+Production cloud storage and statistics are not implemented. Functional link/QR
+sharing is implemented; verified production-domain Android App Links remain deployment work.

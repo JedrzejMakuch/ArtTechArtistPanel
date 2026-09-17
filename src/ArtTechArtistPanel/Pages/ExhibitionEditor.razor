@@ -38,6 +38,9 @@ else
             <p>@(exhibition.Status switch { "draft" => "This draft is hidden from viewers.", "published" => "Viewers can open this exhibition while your account and profile are active.", "deactivated" => "This exhibition is hidden from viewers. You can republish it.", _ => "Refresh to check the current status." })</p>
             @if (exhibition.Status == "published")
             { <p class="exhibition-code">Exhibition code: <code>@exhibition.ExhibitionCode</code></p> }
+            <SharePanel Kind="PublicContentKind.Exhibition" Code="@exhibition.ExhibitionCode" Title="@exhibition.Title"
+                Enabled="@(exhibition.Status == "published")"
+                UnavailableMessage="@(exhibition.Status == "draft" ? "Publish this draft before sharing it." : "Republish this exhibition before sharing it.")" />
             <ExhibitionActions Status="@exhibition.Status" Busy="transitioning" Disabled="@(busy || !CanWrite || stateUncertain || editContext.IsModified())" OnAction="Transition" />
             @if (editContext.IsModified()) { <p class="hint">Save your metadata changes before changing publication.</p> }
             @if (stateUncertain)
